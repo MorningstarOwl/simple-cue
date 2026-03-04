@@ -250,9 +250,28 @@ With the `action` field, an LLM conversation agent (e.g. a local Ollama model wi
 2. The LLM identifies this as a future action (not immediate), resolves `light.porch_lights` from the entity list, and calls `simple_cue.set` with the action packed into the payload.
 3. At midnight, `simple_cue_triggered` fires, the Action Dispatcher picks it up, and the lights turn off.
 
-**System prompt instruction for the LLM:**
+### Required: Configure your conversation agent
 
-> For immediate requests, call the appropriate Home Assistant service directly. For requests involving a future time, call `simple_cue.set` with a descriptive `name`, the `datetime` from the user's natural language, and an `action` containing the service call you would have made immediately.
+> [!IMPORTANT]
+> **Scheduling future actions will not work without this step.** By default, LLMs handle every request as an immediate command. You must add the instruction below to your conversation agent's system prompt so the model knows to use `simple_cue.set` for future-timed requests instead.
+
+**Where to add it in Home Assistant:**
+
+1. Go to **Settings → Voice Assistants**
+2. Select your assistant (e.g. your Ollama agent)
+3. Find the **Instructions** or **System prompt** field
+4. Paste the text below at the end of whatever is already there
+
+**Copy this exactly into your agent's instructions:**
+
+```
+For immediate requests, call the appropriate Home Assistant service directly.
+For requests involving a future time ("at midnight", "in 2 hours", "tomorrow at 7am", etc.),
+call simple_cue.set with:
+  - name: a short descriptive slug (e.g. porch_lights_off)
+  - datetime: the time from the user's request, using natural language or ISO-8601
+  - action: the service call you would have made for an immediate request
+```
 
 The `action` structure (`service`, `target`, `data`) is intentionally identical to HA's native service call format, so the model doesn't need to learn a custom schema.
 
