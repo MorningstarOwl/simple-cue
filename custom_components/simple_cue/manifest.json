@@ -1,0 +1,10 @@
+{
+  "domain": "simple_cue",
+  "name": "Simple Cue",
+  "codeowners": ["@MorningstarOwl"],
+  "config_flow": true,
+  "documentation": "https://github.com/MorningstarOwl/simple-cue",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "version": "1.0.0"
+}

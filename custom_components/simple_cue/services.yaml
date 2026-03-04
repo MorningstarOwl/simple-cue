@@ -1,0 +1,34 @@
+set:
+  name: Set cue
+  description: Create or replace a named one-shot scheduled cue.
+  fields:
+    name:
+      name: Name
+      description: Unique slug for this cue (e.g. coffee, lights, medication).
+      required: true
+      example: coffee
+      selector:
+        text:
+    datetime:
+      name: Date/Time
+      description: When the cue should fire.
+      required: true
+      example: "2025-03-05T06:30:00"
+      selector:
+        datetime:
+
+cancel:
+  name: Cancel cue
+  description: Cancel a cue by name. Does nothing if it doesn't exist.
+  fields:
+    name:
+      name: Name
+      description: The name of the cue to cancel.
+      required: true
+      example: coffee
+      selector:
+        text:
+
+cancel_all:
+  name: Cancel all cues
+  description: Remove every active cue.

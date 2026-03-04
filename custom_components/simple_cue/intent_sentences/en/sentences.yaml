@@ -1,0 +1,33 @@
+language: en
+intents:
+  set_simple_cue:
+    data:
+      - sentences:
+          - "set a {name} cue for {datetime}"
+          - "set the {name} cue for {datetime}"
+          - "schedule a {name} cue for {datetime}"
+          - "create a {name} cue for {datetime}"
+        slots:
+          name:
+            type: text
+          datetime:
+            type: text
+
+  cancel_simple_cue:
+    data:
+      - sentences:
+          - "cancel the {name} cue"
+          - "remove the {name} cue"
+          - "delete the {name} cue"
+          - "clear the {name} cue"
+        slots:
+          name:
+            type: text
+
+  list_simple_cues:
+    data:
+      - sentences:
+          - "what cues are set"
+          - "list my cues"
+          - "show active cues"
+          - "what timers are set"

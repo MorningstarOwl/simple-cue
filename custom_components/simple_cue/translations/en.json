@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Simple Cue",
+        "description": "Add the Simple Cue integration. This provides named, one-shot scheduled triggers for automations."
+      }
+    },
+    "abort": {
+      "already_configured": "Simple Cue is already configured."
+    }
+  }
+}
