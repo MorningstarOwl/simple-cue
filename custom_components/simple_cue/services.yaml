@@ -19,6 +19,19 @@ set:
       example: "tomorrow at 7am"
       selector:
         text:
+    action:
+      name: Action
+      description: >
+        Optional HA service call (or list of service calls) to execute when the
+        cue fires. Omit for event-only cues handled by dedicated automations.
+        Each action must include a 'service' key. 'target' and 'data' are optional.
+      required: false
+      example:
+        service: light.turn_off
+        target:
+          entity_id: light.porch_lights
+      selector:
+        object:
 
 cancel:
   name: Cancel cue

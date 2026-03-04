@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -12,6 +12,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import intent
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_point_in_time
@@ -19,6 +20,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    ATTR_ACTION,
     ATTR_DATETIME,
     ATTR_NAME,
     DOMAIN,
@@ -42,6 +44,7 @@ SERVICE_SET_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_NAME): str,
         vol.Required(ATTR_DATETIME): str,
+        vol.Optional(ATTR_ACTION): vol.Any(dict, list),
     }
 )
 
@@ -52,12 +55,39 @@ SERVICE_CANCEL_SCHEMA = vol.Schema(
 )
 
 
+def _validate_action(action: Any) -> None:
+    """Validate the action payload.
+
+    Each action item must be a dict with a 'service' string key.
+    Raises ServiceValidationError on failure.
+    """
+    if action is None:
+        return
+
+    items: list[Any] = action if isinstance(action, list) else [action]
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ServiceValidationError(
+                f"action item {i} must be a mapping, got {type(item).__name__}"
+            )
+        if "service" not in item:
+            raise ServiceValidationError(
+                f"action item {i} is missing the required 'service' key"
+            )
+        if not isinstance(item["service"], str):
+            raise ServiceValidationError(
+                f"action item {i} 'service' must be a string, "
+                f"got {type(item['service']).__name__}"
+            )
+
+
 @dataclass
 class CueEntry:
     """Represents a single scheduled cue."""
 
     name: str
     fire_at: datetime
+    action: dict | list | None = None
     unsub: callback | None = None
 
 
@@ -82,7 +112,17 @@ class CueManager:
         """Return the number of active cues."""
         return len(self._cues)
 
-    async def async_set_cue(self, name: str, fire_at: datetime) -> None:
+    @property
+    def cues_with_actions_count(self) -> int:
+        """Return the number of active cues that carry an action payload."""
+        return sum(1 for e in self._cues.values() if e.action is not None)
+
+    async def async_set_cue(
+        self,
+        name: str,
+        fire_at: datetime,
+        action: dict | list | None = None,
+    ) -> None:
         """Create or replace a cue."""
         # Ensure timezone-aware, stored in UTC
         if fire_at.tzinfo is None:
@@ -100,10 +140,10 @@ class CueManager:
         unsub = async_track_point_in_time(
             self.hass, self._make_fire_callback(name), fire_at
         )
-        self._cues[name] = CueEntry(name=name, fire_at=fire_at, unsub=unsub)
+        self._cues[name] = CueEntry(name=name, fire_at=fire_at, action=action, unsub=unsub)
 
         await self._async_persist()
-        async_dispatcher_send(self.hass, SIGNAL_CUE_ADDED, name, fire_at)
+        async_dispatcher_send(self.hass, SIGNAL_CUE_ADDED, name, fire_at, action)
         async_dispatcher_send(self.hass, SIGNAL_CUES_UPDATED)
         _LOGGER.info("Cue '%s' set for %s", name, fire_at.isoformat())
 
@@ -140,7 +180,18 @@ class CueManager:
             return
 
         now = dt_util.utcnow()
-        for name, iso_dt in data["cues"].items():
+        for name, cue_data in data["cues"].items():
+            # Support both old format (plain ISO string) and new format (dict)
+            if isinstance(cue_data, str):
+                iso_dt = cue_data
+                action: dict | list | None = None
+            elif isinstance(cue_data, dict):
+                iso_dt = cue_data.get("datetime", "")
+                action = cue_data.get("action")
+            else:
+                _LOGGER.warning("Skipping cue '%s' with unrecognised storage format", name)
+                continue
+
             fire_at = dt_util.parse_datetime(iso_dt)
             if fire_at is None:
                 _LOGGER.warning("Skipping cue '%s' with invalid datetime", name)
@@ -150,16 +201,19 @@ class CueManager:
             if fire_at <= now:
                 # Cue expired while HA was down — fire it immediately
                 _LOGGER.info("Cue '%s' expired during downtime, firing now", name)
-                self.hass.bus.async_fire(
-                    EVENT_CUE_TRIGGERED,
-                    {ATTR_NAME: name, ATTR_DATETIME: fire_at.isoformat()},
-                )
+                event_data: dict[str, Any] = {
+                    ATTR_NAME: name,
+                    ATTR_DATETIME: fire_at.isoformat(),
+                }
+                if action is not None:
+                    event_data[ATTR_ACTION] = action
+                self.hass.bus.async_fire(EVENT_CUE_TRIGGERED, event_data)
                 continue
 
             unsub = async_track_point_in_time(
                 self.hass, self._make_fire_callback(name), fire_at
             )
-            self._cues[name] = CueEntry(name=name, fire_at=fire_at, unsub=unsub)
+            self._cues[name] = CueEntry(name=name, fire_at=fire_at, action=action, unsub=unsub)
             _LOGGER.debug("Restored cue '%s' for %s", name, fire_at.isoformat())
 
         # Persist cleaned state (expired cues removed)
@@ -182,13 +236,14 @@ class CueManager:
                 return
 
             _LOGGER.info("Cue '%s' fired", name)
-            self.hass.bus.async_fire(
-                EVENT_CUE_TRIGGERED,
-                {
-                    ATTR_NAME: name,
-                    ATTR_DATETIME: entry.fire_at.isoformat(),
-                },
-            )
+            event_data: dict[str, Any] = {
+                ATTR_NAME: name,
+                ATTR_DATETIME: entry.fire_at.isoformat(),
+            }
+            if entry.action is not None:
+                event_data[ATTR_ACTION] = entry.action
+
+            self.hass.bus.async_fire(EVENT_CUE_TRIGGERED, event_data)
 
             await self._async_persist()
             async_dispatcher_send(self.hass, SIGNAL_CUE_REMOVED, name)
@@ -208,7 +263,10 @@ class CueManager:
         await self._store.async_save(
             {
                 "cues": {
-                    name: entry.fire_at.isoformat()
+                    name: {
+                        "datetime": entry.fire_at.isoformat(),
+                        "action": entry.action,
+                    }
                     for name, entry in self._cues.items()
                 }
             }
@@ -234,6 +292,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_set(call: ServiceCall) -> None:
         name: str = call.data[ATTR_NAME]
         dt_raw = call.data[ATTR_DATETIME]
+        action: dict | list | None = call.data.get(ATTR_ACTION)
+
+        # Validate action payload before parsing datetime
+        _validate_action(action)
+
         if isinstance(dt_raw, str):
             # Try ISO-8601 first, then fall back to natural language
             fire_at = dt_util.parse_datetime(dt_raw)
@@ -255,7 +318,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         else:
             _LOGGER.error("Unexpected datetime type for cue '%s': %s", name, type(dt_raw))
             return
-        await manager.async_set_cue(name, fire_at)
+
+        await manager.async_set_cue(name, fire_at, action)
 
     async def handle_cancel(call: ServiceCall) -> None:
         await manager.async_cancel_cue(call.data[ATTR_NAME])

@@ -14,7 +14,9 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    ATTR_ACTION,
     ATTR_CUES,
+    ATTR_CUES_WITH_ACTIONS,
     ATTR_NAME,
     ATTR_REMAINING,
     DOMAIN,
@@ -75,13 +77,15 @@ async def async_setup_entry(
 
     # -- Dispatcher: cue added ----------------------------------------------
     @callback
-    def _handle_cue_added(name: str, fire_at: datetime) -> None:
+    def _handle_cue_added(
+        name: str, fire_at: datetime, action: dict | list | None
+    ) -> None:
         # If replacing, remove old entity first
         if name in entities:
             old = entities.pop(name)
             hass.async_create_task(old.async_remove())
 
-        sensor = SimpleCueSensor(name, fire_at)
+        sensor = SimpleCueSensor(name, fire_at, action)
         entities[name] = sensor
         async_add_entities([sensor])
 
@@ -99,7 +103,7 @@ async def async_setup_entry(
     # -- Bootstrap existing cues from manager --------------------------------
     initial_sensors: list[SimpleCueSensor] = []
     for name, cue_entry in manager.cues.items():
-        sensor = SimpleCueSensor(name, cue_entry.fire_at)
+        sensor = SimpleCueSensor(name, cue_entry.fire_at, cue_entry.action)
         entities[name] = sensor
         initial_sensors.append(sensor)
 
@@ -112,10 +116,13 @@ class SimpleCueSensor(SensorEntity):
     _attr_should_poll = False
     _attr_icon = "mdi:timer-outline"
 
-    def __init__(self, name: str, fire_at: datetime) -> None:
+    def __init__(
+        self, name: str, fire_at: datetime, action: dict | list | None = None
+    ) -> None:
         """Initialise the cue sensor."""
         self._cue_name = name
         self._fire_at = fire_at
+        self._action = action
 
         self._attr_unique_id = f"simple_cue_{name}"
         self._attr_name = f"Simple Cue {name}"
@@ -128,11 +135,13 @@ class SimpleCueSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Return friendly name and remaining countdown."""
-        return {
+        """Return friendly name, remaining countdown, and optional action."""
+        attrs: dict = {
             ATTR_NAME: self._cue_name,
             ATTR_REMAINING: _format_remaining(self._fire_at),
+            ATTR_ACTION: self._action,
         }
+        return attrs
 
 
 class SimpleCueCountSensor(SensorEntity):
@@ -154,10 +163,11 @@ class SimpleCueCountSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Return a dict of all active cues."""
+        """Return a dict of all active cues and the count carrying actions."""
         return {
             ATTR_CUES: {
                 name: dt_util.as_local(entry.fire_at).isoformat()
                 for name, entry in self._manager.cues.items()
-            }
+            },
+            ATTR_CUES_WITH_ACTIONS: self._manager.cues_with_actions_count,
         }
