@@ -11,11 +11,14 @@ set:
         text:
     datetime:
       name: Date/Time
-      description: When the cue should fire.
+      description: >
+        When the cue should fire. Accepts natural language ("tomorrow at 7am",
+        "in 2 hours", "next friday at 9pm", "monday at noon") or an
+        ISO-8601 string ("2025-06-01T08:00:00").
       required: true
-      example: "2025-03-05T06:30:00"
+      example: "tomorrow at 7am"
       selector:
-        datetime:
+        text:
 
 cancel:
   name: Cancel cue

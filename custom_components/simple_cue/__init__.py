@@ -235,9 +235,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name: str = call.data[ATTR_NAME]
         dt_raw = call.data[ATTR_DATETIME]
         if isinstance(dt_raw, str):
+            # Try ISO-8601 first, then fall back to natural language
             fire_at = dt_util.parse_datetime(dt_raw)
             if fire_at is None:
-                _LOGGER.error("Invalid datetime '%s' for cue '%s'", dt_raw, name)
+                from .time_parser import parse_fuzzy_datetime
+                fire_at = parse_fuzzy_datetime(dt_raw)
+            if fire_at is None:
+                _LOGGER.error(
+                    "Could not parse datetime '%s' for cue '%s'. "
+                    "Use ISO-8601 (e.g. '2025-06-01T08:00:00') or natural "
+                    "language (e.g. 'tomorrow at 7am', 'in 2 hours', "
+                    "'next friday at 9pm').",
+                    dt_raw,
+                    name,
+                )
                 return
         elif isinstance(dt_raw, datetime):
             fire_at = dt_raw

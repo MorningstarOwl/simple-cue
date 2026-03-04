@@ -13,10 +13,25 @@ Named, one-shot scheduled triggers for Home Assistant. Set a cue by name and dat
 
 ### `simple_cue.set`
 
-| Field    | Type     | Description                        |
-|----------|----------|------------------------------------|
-| name     | string   | Unique slug (e.g. `coffee`)        |
-| datetime | datetime | When the cue should fire           |
+| Field    | Type   | Description                        |
+|----------|--------|------------------------------------|
+| name     | string | Unique slug (e.g. `coffee`)        |
+| datetime | string | When the cue should fire           |
+
+The `datetime` field accepts **natural language** or an **ISO-8601 string**:
+
+| You type | Meaning |
+|---|---|
+| `tomorrow at 7am` | Tomorrow at 07:00 local time |
+| `today at 17:30` | Today at 17:30 local time |
+| `in 2 hours` | 2 hours from now |
+| `in 30 minutes` | 30 minutes from now |
+| `in 3 days` | 3 days from now |
+| `next friday at 9pm` | The coming Friday at 21:00 |
+| `monday at noon` | Next Monday at 12:00 |
+| `midnight` | Start of tomorrow (00:00) |
+| `noon` | 12:00 today (or tomorrow if already past) |
+| `2025-06-01T08:00:00` | ISO-8601 exact datetime |
 
 Setting a cue with an existing name replaces it.
 
@@ -68,7 +83,7 @@ actions:
   - action: simple_cue.set
     data:
       name: coffee
-      datetime: "{{ today_at('06:30') + timedelta(days=1) }}"
+      datetime: "tomorrow at 6:30am"
   - action: input_boolean.turn_off
     target:
       entity_id: input_boolean.coffee_tomorrow
