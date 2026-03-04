@@ -18,11 +18,17 @@ Named, one-shot scheduled triggers for Home Assistant. Set a cue by name and dat
 | name     | string | Unique slug (e.g. `coffee`)        |
 | datetime | string | When the cue should fire           |
 
-The `datetime` field accepts **natural language** or an **ISO-8601 string**:
+The `datetime` field accepts **natural language** or an **ISO-8601 string**.
 
-| You type | Meaning |
+> [!IMPORTANT]
+> The natural language parser matches **exact phrases only** — it is not fuzzy and does not tolerate typos or alternate wording. Copy expressions from the table below character-for-character. If the string is not recognised, the cue will silently not be set and an error will appear in the Home Assistant logs.
+
+**Accepted expressions — copy exactly as shown:**
+
+| Expression | Meaning |
 |---|---|
 | `tomorrow at 7am` | Tomorrow at 07:00 local time |
+| `tomorrow at 6:30am` | Tomorrow at 06:30 local time |
 | `today at 17:30` | Today at 17:30 local time |
 | `in 2 hours` | 2 hours from now |
 | `in 30 minutes` | 30 minutes from now |
@@ -31,7 +37,25 @@ The `datetime` field accepts **natural language** or an **ISO-8601 string**:
 | `monday at noon` | Next Monday at 12:00 |
 | `midnight` | Start of tomorrow (00:00) |
 | `noon` | 12:00 today (or tomorrow if already past) |
-| `2025-06-01T08:00:00` | ISO-8601 exact datetime |
+| `2025-06-01T08:00:00` | ISO-8601 exact datetime (always works) |
+
+**Time formats accepted anywhere a time appears:**
+`5am` · `5pm` · `5:30am` · `5:30pm` · `17:00` · `17:30` · `noon` · `midnight`
+
+**Day formats accepted anywhere a day appears:**
+`today` · `tomorrow` · `monday` · `tuesday` · `wednesday` · `thursday` · `friday` · `saturday` · `sunday` · `next monday` (etc.)
+
+**What will fail silently:**
+
+| You type | Why it fails |
+|---|---|
+| `tommorow at 5am` | Typo |
+| `tomorrow @ 5am` | Wrong separator (`@` instead of `at`) |
+| `in a couple hours` | Not a number |
+| `this friday at 9pm` | `this` is not a recognised keyword — use `next` or the bare weekday |
+| `5 in the morning` | Unrecognised phrasing |
+
+If a cue fails to set, check **Settings → System → Logs** in Home Assistant for a message beginning with `Could not parse datetime`.
 
 Setting a cue with an existing name replaces it.
 
