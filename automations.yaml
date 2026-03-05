@@ -1,0 +1,134 @@
+# ===========================================================================
+# Simple Cue — Automations
+# ===========================================================================
+# These automations react to the simple_cue_triggered event emitted by the
+# Simple Cue integration whenever a scheduled cue fires.
+#
+# Prerequisites
+# -------------
+# • Simple Cue integration installed via HACS
+# • input_boolean.simple_cue_debug declared in configuration.yaml:
+#     input_boolean: !include input_boolean.yaml
+#   (see input_boolean.yaml in this repo)
+
+# ---------------------------------------------------------------------------
+# 1. Catch-All Handler
+# ---------------------------------------------------------------------------
+# Parses the cue name slug and dynamically calls the matching HA service.
+#
+# Slug format  : {entity_parts}_{action}
+#                  action in { on, off, toggle }
+# Domain rules : contains "light"         -> light
+#                contains "switch"        -> switch
+#                contains "fan"           -> fan
+#                contains "media_player"
+#                       or "tv"           -> media_player
+#                contains "cover"
+#                       or "blind"        -> cover
+#                everything else          -> homeassistant
+#
+# Examples
+#   living_room_lights_off  -> light.turn_off(light.living_room_lights)
+#   kitchen_lights_on       -> light.turn_on(light.kitchen_lights)
+#   bedroom_fan_off         -> fan.turn_off(fan.bedroom_fan)
+#   main_tv_off             -> media_player.turn_off(media_player.main_tv)
+#
+# Unrecognised cue names (action not in on/off/toggle) surface as a
+# persistent notification so failures are always visible.
+
+- alias: "Simple Cue - Catch-All Handler"
+  id: simple_cue_catch_all
+  description: >-
+    Parses any simple_cue_triggered event name slug and calls the matching
+    Home Assistant service. Unrecognised cue names surface as a persistent
+    notification.
+  trigger:
+    - platform: event
+      event_type: simple_cue_triggered
+  variables:
+    cue_name: "{{ trigger.event.data.name }}"
+    parts: "{{ cue_name.split('_') }}"
+    # Last underscore-delimited segment is the action verb
+    action: "{{ parts | last }}"
+    # Everything before the final underscore is the entity name portion
+    entity_part: "{{ parts[:-1] | join('_') }}"
+    # Domain sniffing: inspect entity_part for well-known keywords
+    domain: >-
+      {%- if 'light' in entity_part -%}light
+      {%- elif 'switch' in entity_part -%}switch
+      {%- elif 'fan' in entity_part -%}fan
+      {%- elif 'media_player' in entity_part or 'tv' in entity_part -%}media_player
+      {%- elif 'cover' in entity_part or 'blind' in entity_part -%}cover
+      {%- else -%}homeassistant
+      {%- endif -%}
+    entity_id: "{{ domain }}.{{ entity_part }}"
+  condition: []
+  action:
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ action in ['on', 'off', 'toggle'] }}"
+          sequence:
+            - service: "{{ domain }}.turn_{{ action }}"
+              target:
+                entity_id: "{{ entity_id }}"
+      default:
+        - service: persistent_notification.create
+          data:
+            title: "Simple Cue: Unrecognised cue"
+            message: >-
+              Simple Cue fired an unrecognised cue name: "{{ cue_name }}".
+
+              The action "{{ action }}" is not one of: on, off, toggle.
+              Check that your cue name ends with _on, _off, or _toggle and
+              that the entity portion maps to a supported domain.
+            notification_id: "simple_cue_unrecognised_{{ cue_name }}"
+  mode: parallel
+  max: 10
+
+# ---------------------------------------------------------------------------
+# 2. Entity Cleanup & Debug Logger
+# ---------------------------------------------------------------------------
+# Refreshes sensor.simple_cue_count after every cue fires (stale entity
+# cleanup) and optionally writes a persistent debug notification so you can
+# confirm the fired cue name in the UI.
+#
+# Toggle debug logging by switching input_boolean.simple_cue_debug on/off
+# in the Helpers section of the HA dashboard (or via a dashboard button).
+
+- alias: "Simple Cue - Entity Cleanup & Debug"
+  id: simple_cue_cleanup_debug
+  description: >-
+    Refreshes sensor.simple_cue_count after each cue fires and logs the
+    fired cue name as a persistent notification when
+    input_boolean.simple_cue_debug is on.
+  trigger:
+    - platform: event
+      event_type: simple_cue_triggered
+  variables:
+    cue_name: "{{ trigger.event.data.name }}"
+    fired_at: "{{ trigger.event.data.datetime }}"
+  condition: []
+  action:
+    # Refresh the count sensor so the UI reflects the reduced cue count
+    # immediately rather than waiting for the next natural polling cycle.
+    - service: homeassistant.update_entity
+      target:
+        entity_id: sensor.simple_cue_count
+    # Conditionally write a debug notification -- gated by the helper toggle.
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: input_boolean.simple_cue_debug
+              state: "on"
+          sequence:
+            - service: persistent_notification.create
+              data:
+                title: "Simple Cue: Debug - cue fired"
+                message: >-
+                  Cue name  : {{ cue_name }}
+                  Scheduled : {{ fired_at }}
+                  Fired at  : {{ now().isoformat() }}
+                notification_id: "simple_cue_debug_{{ cue_name }}"
+  mode: parallel
+  max: 10

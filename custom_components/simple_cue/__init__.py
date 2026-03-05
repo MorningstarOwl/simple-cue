@@ -13,7 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import intent
+from homeassistant.helpers import entity_registry, intent
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.storage import Store
@@ -208,6 +208,17 @@ class CueManager:
                 if action is not None:
                     event_data[ATTR_ACTION] = action
                 self.hass.bus.async_fire(EVENT_CUE_TRIGGERED, event_data)
+
+                # Clean up any lingering entity registry entry for this
+                # cue so the "no longer being provided" warning does not
+                # appear on the next startup.
+                er = entity_registry.async_get(self.hass)
+                reg_entity_id = er.async_get_entity_id(
+                    "sensor", DOMAIN, f"simple_cue_{name}"
+                )
+                if reg_entity_id:
+                    er.async_remove(reg_entity_id)
+
                 continue
 
             unsub = async_track_point_in_time(
@@ -248,6 +259,16 @@ class CueManager:
             await self._async_persist()
             async_dispatcher_send(self.hass, SIGNAL_CUE_REMOVED, name)
             async_dispatcher_send(self.hass, SIGNAL_CUES_UPDATED)
+
+            # Remove the entity registry entry so the
+            # "entity is no longer being provided" warning does not
+            # persist in the UI after the cue fires.
+            er = entity_registry.async_get(self.hass)
+            reg_entity_id = er.async_get_entity_id(
+                "sensor", DOMAIN, f"simple_cue_{name}"
+            )
+            if reg_entity_id:
+                er.async_remove(reg_entity_id)
 
         return _fire_cue
 

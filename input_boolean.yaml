@@ -1,0 +1,13 @@
+# Simple Cue -- Helper declarations
+#
+# Include this file in configuration.yaml:
+#
+#   input_boolean: !include input_boolean.yaml
+#
+# Or merge the entry below into your existing input_boolean: block.
+# After adding, restart Home Assistant (or reload Input Booleans from
+# Developer Tools > YAML).
+
+simple_cue_debug:
+  name: Simple Cue Debug Mode
+  icon: mdi:bug
