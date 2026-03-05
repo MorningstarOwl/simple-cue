@@ -65,7 +65,7 @@ def _validate_action(action: Any) -> None:
     if action is None:
         return
 
-    # Plain string actions are natural language sentences — no further validation.
+    # Plain string actions are natural language sentences - no further validation.
     if isinstance(action, str):
         return
 
