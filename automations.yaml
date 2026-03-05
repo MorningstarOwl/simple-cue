@@ -12,79 +12,80 @@
 #   (see input_boolean.yaml in this repo)
 
 # ---------------------------------------------------------------------------
-# 1. Catch-All Handler
+# 1. Action Dispatcher
 # ---------------------------------------------------------------------------
-# Parses the cue name slug and dynamically calls the matching HA service.
+# Dispatches the `action` payload from every simple_cue_triggered event.
 #
-# Slug format  : {entity_parts}_{action}
-#                  action in { on, off, toggle }
-# Domain rules : contains "light"         -> light
-#                contains "switch"        -> switch
-#                contains "fan"           -> fan
-#                contains "media_player"
-#                       or "tv"           -> media_player
-#                contains "cover"
-#                       or "blind"        -> cover
-#                everything else          -> homeassistant
+# Action type routing
+# -------------------
+#   string  → re-issued as a voice command via conversation.process (primary)
+#             The LLM executes it exactly as if the user had said it aloud.
+#   dict    → executed directly as a single structured HA service call (legacy)
+#   list    → each item executed as a structured HA service call (legacy)
+#   null    → no-op (event-only cues handled by dedicated automations)
 #
-# Examples
-#   living_room_lights_off  -> light.turn_off(light.living_room_lights)
-#   kitchen_lights_on       -> light.turn_on(light.kitchen_lights)
-#   bedroom_fan_off         -> fan.turn_off(fan.bedroom_fan)
-#   main_tv_off             -> media_player.turn_off(media_player.main_tv)
+# String action example (LLM-scheduled cue):
+#   action: "Turn off the living room lights"
+#   → conversation.process(text="Turn off the living room lights")
 #
-# Unrecognised cue names (action not in on/off/toggle) surface as a
-# persistent notification so failures are always visible.
+# Dict action example (legacy structured payload):
+#   action: {service: light.turn_off, target: {entity_id: light.living_room}}
+#
+# IMPORTANT: Set agent_id below to the entity_id of your Ollama conversation
+# agent. Find it at Settings → Voice Assistants → [your agent] → Entity ID.
+# The default below matches the most common Ollama integration entity name.
 
-- alias: "Simple Cue - Catch-All Handler"
-  id: simple_cue_catch_all
+- alias: "Simple Cue — Action Dispatcher"
+  id: simple_cue_action_dispatcher
   description: >-
-    Parses any simple_cue_triggered event name slug and calls the matching
-    Home Assistant service. Unrecognised cue names surface as a persistent
-    notification.
+    Routes simple_cue_triggered action payloads: strings are re-issued as
+    voice commands via conversation.process; dicts and lists are executed
+    as direct structured service calls (legacy fallback).
   trigger:
     - platform: event
       event_type: simple_cue_triggered
-  variables:
-    cue_name: "{{ trigger.event.data.name }}"
-    parts: "{{ cue_name.split('_') }}"
-    # Last underscore-delimited segment is the action verb
-    action: "{{ parts | last }}"
-    # Everything before the final underscore is the entity name portion
-    entity_part: "{{ parts[:-1] | join('_') }}"
-    # Domain sniffing: inspect entity_part for well-known keywords
-    domain: >-
-      {%- if 'light' in entity_part -%}light
-      {%- elif 'switch' in entity_part -%}switch
-      {%- elif 'fan' in entity_part -%}fan
-      {%- elif 'media_player' in entity_part or 'tv' in entity_part -%}media_player
-      {%- elif 'cover' in entity_part or 'blind' in entity_part -%}cover
-      {%- else -%}homeassistant
-      {%- endif -%}
-    entity_id: "{{ domain }}.{{ entity_part }}"
-  condition: []
+  condition:
+    - condition: template
+      value_template: "{{ trigger.event.data.action is not none }}"
   action:
     - choose:
+        # -- String: re-issue as a voice command via the LLM ------------------
         - conditions:
             - condition: template
-              value_template: "{{ action in ['on', 'off', 'toggle'] }}"
+              value_template: "{{ trigger.event.data.action is string }}"
           sequence:
-            - service: "{{ domain }}.turn_{{ action }}"
-              target:
-                entity_id: "{{ entity_id }}"
-      default:
-        - service: persistent_notification.create
-          data:
-            title: "Simple Cue: Unrecognised cue"
-            message: >-
-              Simple Cue fired an unrecognised cue name: "{{ cue_name }}".
+            - service: conversation.process
+              data:
+                # The natural language sentence stored in the cue's action field.
+                text: "{{ trigger.event.data.action }}"
+                # Verify this matches your Ollama conversation agent entity ID.
+                # Settings → Voice Assistants → [agent] → Entity ID
+                agent_id: conversation.ollama_conversation
 
-              The action "{{ action }}" is not one of: on, off, toggle.
-              Check that your cue name ends with _on, _off, or _toggle and
-              that the entity portion maps to a supported domain.
-            notification_id: "simple_cue_unrecognised_{{ cue_name }}"
-  mode: parallel
-  max: 10
+        # -- Dict: single structured service call (legacy) --------------------
+        - conditions:
+            - condition: template
+              value_template: "{{ trigger.event.data.action is mapping }}"
+          sequence:
+            - service: "{{ trigger.event.data.action.service }}"
+              target: "{{ trigger.event.data.action.get('target', {}) }}"
+              data: "{{ trigger.event.data.action.get('data', {}) }}"
+
+        # -- List: sequence of structured service calls (legacy) --------------
+        - conditions:
+            - condition: template
+              value_template: >-
+                {{ trigger.event.data.action is sequence
+                   and trigger.event.data.action is not string }}
+          sequence:
+            - repeat:
+                for_each: "{{ trigger.event.data.action }}"
+                sequence:
+                  - service: "{{ repeat.item.service }}"
+                    target: "{{ repeat.item.get('target', {}) }}"
+                    data: "{{ repeat.item.get('data', {}) }}"
+  mode: queued
+  max: 20
 
 # ---------------------------------------------------------------------------
 # 2. Entity Cleanup & Debug Logger

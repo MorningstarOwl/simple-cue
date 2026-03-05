@@ -44,7 +44,7 @@ SERVICE_SET_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_NAME): str,
         vol.Required(ATTR_DATETIME): str,
-        vol.Optional(ATTR_ACTION): vol.Any(dict, list),
+        vol.Optional(ATTR_ACTION): vol.Any(str, dict, list),
     }
 )
 
@@ -58,10 +58,15 @@ SERVICE_CANCEL_SCHEMA = vol.Schema(
 def _validate_action(action: Any) -> None:
     """Validate the action payload.
 
-    Each action item must be a dict with a 'service' string key.
+    Strings pass through as-is (re-issued as voice commands).
+    Each dict/list item must have a 'service' string key.
     Raises ServiceValidationError on failure.
     """
     if action is None:
+        return
+
+    # Plain string actions are natural language sentences — no further validation.
+    if isinstance(action, str):
         return
 
     items: list[Any] = action if isinstance(action, list) else [action]
@@ -87,7 +92,7 @@ class CueEntry:
 
     name: str
     fire_at: datetime
-    action: dict | list | None = None
+    action: str | dict | list | None = None
     unsub: callback | None = None
 
 
@@ -121,7 +126,7 @@ class CueManager:
         self,
         name: str,
         fire_at: datetime,
-        action: dict | list | None = None,
+        action: str | dict | list | None = None,
     ) -> None:
         """Create or replace a cue."""
         # Ensure timezone-aware, stored in UTC
@@ -184,7 +189,7 @@ class CueManager:
             # Support both old format (plain ISO string) and new format (dict)
             if isinstance(cue_data, str):
                 iso_dt = cue_data
-                action: dict | list | None = None
+                action: str | dict | list | None = None
             elif isinstance(cue_data, dict):
                 iso_dt = cue_data.get("datetime", "")
                 action = cue_data.get("action")

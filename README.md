@@ -66,7 +66,19 @@ If a cue fails to set, check **Settings → System → Logs** in Home Assistant 
 
 #### The `action` field
 
-The optional `action` field lets you embed a service call directly in the cue. When the cue fires, the action is included in the event payload and the [Action Dispatcher automation](#action-dispatcher-automation) executes it automatically — no per-cue automation needed.
+The optional `action` field carries what to do when the cue fires. It is included in the `simple_cue_triggered` event payload and executed automatically by the [Action Dispatcher automation](#action-dispatcher-automation) — no per-cue automation needed.
+
+**Preferred (LLM / voice-scheduled cues):** pass a plain natural language sentence. The Action Dispatcher re-issues it as a fresh voice command via `conversation.process`, so the LLM executes it exactly as if the user had said it aloud.
+
+```yaml
+action: simple_cue.set
+data:
+  name: living_room_lights_off
+  datetime: "2025-06-01T18:45:00"
+  action: "Turn off the living room lights"
+```
+
+**Legacy (structured payloads):** pass a dict or list of HA service calls. These are executed directly without going through the LLM.
 
 A single action:
 
@@ -215,13 +227,16 @@ Always present. Shows the total number of active cues.
 
 ## Action Dispatcher Automation
 
-Install this automation once to automatically execute any cue that carries an `action` payload. It handles both single actions and sequences. Cues without an action are ignored and continue to work through their own dedicated automations as before.
+Install this automation once to automatically route any cue that carries an `action` payload. String actions (the primary LLM path) are re-issued as voice commands via `conversation.process`. Dict and list actions are executed as direct structured service calls (legacy fallback). Cues without an action are ignored and continue to work through their own dedicated automations as before.
+
+> **Note:** Set `agent_id` to the entity ID of your Ollama conversation agent (find it at **Settings → Voice Assistants → [your agent] → Entity ID**). The value `conversation.ollama_conversation` is the most common default.
 
 ```yaml
 alias: "Simple Cue — Action Dispatcher"
 description: >
-  Automatically executes service calls stored in Simple Cue action payloads.
-  Handles both single actions and sequences. Install once; never touch again.
+  Routes simple_cue_triggered action payloads. Strings are re-issued as
+  voice commands via conversation.process. Dicts and lists are executed
+  as direct structured service calls (legacy). Install once; never touch again.
 triggers:
   - trigger: event
     event_type: simple_cue_triggered
@@ -230,20 +245,36 @@ conditions:
     value_template: "{{ trigger.event.data.action is not none }}"
 actions:
   - choose:
+      # String: re-issue as a voice command via the LLM
       - conditions:
           - condition: template
-            value_template: "{{ trigger.event.data.action is list }}"
+            value_template: "{{ trigger.event.data.action is string }}"
+        sequence:
+          - action: conversation.process
+            data:
+              text: "{{ trigger.event.data.action }}"
+              agent_id: conversation.ollama_conversation  # adjust to your agent entity ID
+      # Dict: single structured service call (legacy)
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.event.data.action is mapping }}"
+        sequence:
+          - action: "{{ trigger.event.data.action.service }}"
+            target: "{{ trigger.event.data.action.get('target', {}) }}"
+            data: "{{ trigger.event.data.action.get('data', {}) }}"
+      # List: sequence of structured service calls (legacy)
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.event.data.action is sequence
+                 and trigger.event.data.action is not string }}
         sequence:
           - repeat:
-              count: "{{ trigger.event.data.action | length }}"
+              for_each: "{{ trigger.event.data.action }}"
               sequence:
-                - action: "{{ trigger.event.data.action[repeat.index - 1].service }}"
-                  target: "{{ trigger.event.data.action[repeat.index - 1].target | default({}) }}"
-                  data: "{{ trigger.event.data.action[repeat.index - 1].data | default({}) }}"
-    default:
-      - action: "{{ trigger.event.data.action.service }}"
-        target: "{{ trigger.event.data.action.target | default({}) }}"
-        data: "{{ trigger.event.data.action.data | default({}) }}"
+                - action: "{{ repeat.item.service }}"
+                  target: "{{ repeat.item.get('target', {}) }}"
+                  data: "{{ repeat.item.get('data', {}) }}"
 mode: queued
 max: 20
 ```
@@ -265,8 +296,8 @@ With the `action` field, an LLM conversation agent (e.g. a local Ollama model wi
 **How it works:**
 
 1. User says: _"Remember to turn off the porch lights at midnight."_
-2. The LLM identifies this as a future action (not immediate), resolves `light.porch_lights` from the entity list, and calls `simple_cue.set` with the action packed into the payload.
-3. At midnight, `simple_cue_triggered` fires, the Action Dispatcher picks it up, and the lights turn off.
+2. The LLM identifies this as a future action, computes the ISO-8601 datetime, and calls `simple_cue.set` with `action: "Turn off the porch lights"` — a plain sentence, no structured payload.
+3. At midnight, `simple_cue_triggered` fires. The Action Dispatcher calls `conversation.process` with that sentence, and the LLM executes it as a fresh voice command.
 
 ### Required: Configure your conversation agent
 
@@ -283,15 +314,25 @@ With the `action` field, an LLM conversation agent (e.g. a local Ollama model wi
 **Copy this exactly into your agent's instructions:**
 
 ```
-For immediate requests, call the appropriate Home Assistant service directly.
-For requests involving a future time ("at midnight", "in 2 hours", "tomorrow at 7am", etc.),
-call simple_cue.set with:
-  - name: a short descriptive slug (e.g. porch_lights_off)
-  - datetime: the time from the user's request, using natural language or ISO-8601
-  - action: the service call you would have made for an immediate request
-```
+**Scheduling future actions with Simple Cue**
+When a user asks to do something at a future time, use `simple_cue.set` with these fields:
 
-The `action` structure (`service`, `target`, `data`) is intentionally identical to HA's native service call format, so the model doesn't need to learn a custom schema.
+- `name`: a clean lowercase slug describing the action only, no times, no spaces.
+  Examples: `living_room_lights_off`, `bedroom_fan_on`, `kitchen_switch_off`
+- `datetime`: an ISO-8601 datetime string calculated from the current time.
+  Always resolve relative times like "in 30 minutes" or "tonight at 9pm" into
+  an exact ISO-8601 string — do not pass relative language.
+- `action`: a plain natural language sentence describing what to do at that time,
+  written exactly as if the user had said it as a new voice command.
+  Examples: "Turn off the living room lights", "Turn on the bedroom fan",
+  "Turn off all the lights"
+
+Never put the time in the `name` field. Never omit the `action` field.
+Never put structured data in the `action` field — it must be a plain sentence.
+
+**Cancelling a scheduled action**
+Use `simple_cue.cancel` with the `name` slug to cancel a scheduled action.
+```
 
 ---
 

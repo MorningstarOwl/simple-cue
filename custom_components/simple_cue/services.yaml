@@ -6,7 +6,7 @@ set:
       name: Name
       description: Unique slug for this cue (e.g. coffee, lights, medication).
       required: true
-      example: coffee
+      example: living_room_lights_off
       selector:
         text:
     datetime:
@@ -22,16 +22,22 @@ set:
     action:
       name: Action
       description: >
-        Optional HA service call (or list of service calls) to execute when the
-        cue fires. Omit for event-only cues handled by dedicated automations.
-        Each action must include a 'service' key. 'target' and 'data' are optional.
+        Optional payload to execute when the cue fires. Three forms are accepted:
+
+        String (preferred for LLM/voice-scheduled cues): a plain natural language
+        sentence re-issued as a voice command via conversation.process.
+        Example: "Turn off the living room lights"
+
+        Dict: a single structured HA service call with a required 'service' key
+        and optional 'target' and 'data' keys (legacy).
+
+        List: a sequence of structured service call dicts (legacy).
+
+        Omit entirely for event-only cues handled by dedicated automations.
       required: false
-      example:
-        service: light.turn_off
-        target:
-          entity_id: light.porch_lights
+      example: "Turn off the living room lights"
       selector:
-        object:
+        text:
 
 cancel:
   name: Cancel cue
