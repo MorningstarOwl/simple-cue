@@ -73,12 +73,12 @@ A single action:
 ```yaml
 action: simple_cue.set
 data:
-  name: porch_lights_off
-  datetime: "today at midnight"
+  name: living_room_lights_off
+  datetime: "today at 6:45pm"
   action:
     service: light.turn_off
     target:
-      entity_id: light.porch_lights
+      entity_id: light.living_room
 ```
 
 An action with service data:
@@ -118,6 +118,25 @@ data:
         temperature: 68
 ```
 
+A sequence including media playback:
+
+```yaml
+action: simple_cue.set
+data:
+  name: movie_time
+  datetime: "in 10 minutes"
+  action:
+    - service: light.turn_off
+      target:
+        entity_id: light.living_room
+    - service: media_player.play_media
+      target:
+        entity_id: media_player.tv
+      data:
+        media_content_type: app
+        media_content_id: netflix
+```
+
 Each action item must contain a `service` key (string). `target` and `data` are optional. Simple Cue validates structure at set time but does not check whether entity IDs or service names exist — that happens when the action executes.
 
 Cues without an `action` field work exactly as before — a `simple_cue_triggered` event fires and your dedicated automations handle it.
@@ -142,13 +161,14 @@ Removes every active cue.
 
 When a cue fires, `simple_cue_triggered` is emitted.
 
-**Without an action** (existing behaviour, unchanged):
+**Without an action payload** (`action` is always present; `null` when unset):
 
 ```yaml
 event_type: simple_cue_triggered
 event_data:
   name: coffee
   datetime: "2025-03-05T12:00:00+00:00"
+  action: null
 ```
 
 **With an action:**
@@ -164,7 +184,7 @@ event_data:
       entity_id: light.porch_lights
 ```
 
-The `action` key is omitted entirely when no action was stored, keeping events clean for action-less cues.
+The `action` key is always present in the event payload. It contains the stored action when set, or `null` when no action was provided.
 
 ---
 
@@ -207,9 +227,7 @@ triggers:
     event_type: simple_cue_triggered
 conditions:
   - condition: template
-    value_template: >
-      {{ trigger.event.data.action is defined
-         and trigger.event.data.action is not none }}
+    value_template: "{{ trigger.event.data.action is not none }}"
 actions:
   - choose:
       - conditions:

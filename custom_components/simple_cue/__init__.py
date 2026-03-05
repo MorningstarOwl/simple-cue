@@ -205,8 +205,7 @@ class CueManager:
                     ATTR_NAME: name,
                     ATTR_DATETIME: fire_at.isoformat(),
                 }
-                if action is not None:
-                    event_data[ATTR_ACTION] = action
+                event_data[ATTR_ACTION] = action
                 self.hass.bus.async_fire(EVENT_CUE_TRIGGERED, event_data)
 
                 # Clean up any lingering entity registry entry for this
@@ -251,8 +250,7 @@ class CueManager:
                 ATTR_NAME: name,
                 ATTR_DATETIME: entry.fire_at.isoformat(),
             }
-            if entry.action is not None:
-                event_data[ATTR_ACTION] = entry.action
+            event_data[ATTR_ACTION] = entry.action
 
             self.hass.bus.async_fire(EVENT_CUE_TRIGGERED, event_data)
 
