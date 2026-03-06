@@ -164,6 +164,19 @@ def parse_fuzzy_datetime(text: str) -> datetime | None:
                 date_tag = m.group(1)
                 time_str = None
 
+    # "at <time>" — next occurrence of that clock time (today or tomorrow if past)
+    if date_tag is None:
+        m = re.match(r"^at\s+(.+)$", t)
+        if m:
+            date_tag = "at_time"
+            time_str = m.group(1).strip()
+
+    # Bare time string (e.g. "9pm", "17:30") — next occurrence today or tomorrow
+    if date_tag is None:
+        if _parse_time(t) is not None:
+            date_tag = "at_time"
+            time_str = t
+
     if date_tag is None:
         return None
 
@@ -184,6 +197,10 @@ def parse_fuzzy_datetime(text: str) -> datetime | None:
 
     if date_tag == "tomorrow":
         return base + timedelta(days=1)
+
+    if date_tag == "at_time":
+        # Next occurrence: today if still in the future, otherwise tomorrow
+        return base if base > now else base + timedelta(days=1)
 
     # Weekday resolution
     weekday_name = date_tag.removeprefix("next_")
