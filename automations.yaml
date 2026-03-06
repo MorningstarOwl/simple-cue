@@ -18,29 +18,16 @@
 #
 # Action type routing
 # -------------------
-#   string  → re-issued as a voice command via conversation.process (primary)
-#             The LLM executes it exactly as if the user had said it aloud.
-#   dict    → executed directly as a single structured HA service call (legacy)
-#   list    → each item executed as a structured HA service call (legacy)
-#   null    → no-op (event-only cues handled by dedicated automations)
-#
-# String action example (LLM-scheduled cue):
-#   action: "Turn off the living room lights"
-#   → conversation.process(text="Turn off the living room lights")
-#
-# Dict action example (legacy structured payload):
-#   action: {service: light.turn_off, target: {entity_id: light.living_room}}
-#
-# IMPORTANT: Set agent_id below to the entity_id of your Ollama conversation
-# agent. Find it at Settings → Voice Assistants → [your agent] → Entity ID.
-# The default below matches the most common Ollama integration entity name.
+#   dict  → executed directly as a single structured HA service call
+#   list  → each item executed as a structured HA service call
+#   null  → no-op (event-only cues handled by dedicated automations)
 
 - alias: "Simple Cue — Action Dispatcher"
   id: simple_cue_action_dispatcher
   description: >-
-    Routes simple_cue_triggered action payloads: strings are re-issued as
-    voice commands via conversation.process; dicts and lists are executed
-    as direct structured service calls (legacy fallback).
+    Routes simple_cue_triggered action payloads: dicts are executed as a
+    single structured service call; lists are executed as a sequence of
+    structured service calls.
   trigger:
     - platform: event
       event_type: simple_cue_triggered
@@ -49,20 +36,7 @@
       value_template: "{{ trigger.event.data.action is not none }}"
   action:
     - choose:
-        # -- String: re-issue as a voice command via the LLM ------------------
-        - conditions:
-            - condition: template
-              value_template: "{{ trigger.event.data.action is string }}"
-          sequence:
-            - service: conversation.process
-              data:
-                # The natural language sentence stored in the cue's action field.
-                text: "{{ trigger.event.data.action }}"
-                # Verify this matches your Ollama conversation agent entity ID.
-                # Settings → Voice Assistants → [agent] → Entity ID
-                agent_id: conversation.ollama_conversation
-
-        # -- Dict: single structured service call (legacy) --------------------
+        # -- Dict: single structured service call -----------------------------
         - conditions:
             - condition: template
               value_template: "{{ trigger.event.data.action is mapping }}"
@@ -71,7 +45,7 @@
               target: "{{ trigger.event.data.action.get('target', {}) }}"
               data: "{{ trigger.event.data.action.get('data', {}) }}"
 
-        # -- List: sequence of structured service calls (legacy) --------------
+        # -- List: sequence of structured service calls -----------------------
         - conditions:
             - condition: template
               value_template: >-
@@ -111,12 +85,9 @@
     fired_at: "{{ trigger.event.data.datetime }}"
   condition: []
   action:
-    # Refresh the count sensor so the UI reflects the reduced cue count
-    # immediately rather than waiting for the next natural polling cycle.
     - service: homeassistant.update_entity
       target:
         entity_id: sensor.simple_cue_count
-    # Conditionally write a debug notification -- gated by the helper toggle.
     - choose:
         - conditions:
             - condition: state

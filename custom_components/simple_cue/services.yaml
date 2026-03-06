@@ -22,20 +22,19 @@ set:
     action:
       name: Action
       description: >
-        Optional payload to execute when the cue fires. Three forms are accepted:
+        Optional structured action payload to execute when the cue fires.
 
-        String (preferred for LLM/voice-scheduled cues): a plain natural language
-        sentence re-issued as a voice command via conversation.process.
-        Example: "Turn off the living room lights"
+        Dict: a single HA service call with a required 'service' key and
+        optional 'target' and 'data' keys.
 
-        Dict: a single structured HA service call with a required 'service' key
-        and optional 'target' and 'data' keys (legacy).
-
-        List: a sequence of structured service call dicts (legacy).
+        List: a sequence of service call dicts executed in order.
 
         Omit entirely for event-only cues handled by dedicated automations.
       required: false
-      example: "Turn off the living room lights"
+      example: >
+        service: light.turn_off
+        target:
+          entity_id: light.living_room
       selector:
         text:
 

@@ -13,7 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import entity_registry, intent
+from homeassistant.helpers import entity_registry
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.storage import Store
@@ -34,7 +34,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CONVERSATION]
+PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 SERVICE_SET = "set"
 SERVICE_CANCEL = "cancel"
@@ -44,7 +44,7 @@ SERVICE_SET_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_NAME): str,
         vol.Required(ATTR_DATETIME): str,
-        vol.Optional(ATTR_ACTION): vol.Any(str, dict, list),
+        vol.Optional(ATTR_ACTION): vol.Any(dict, list),
     }
 )
 
@@ -58,15 +58,10 @@ SERVICE_CANCEL_SCHEMA = vol.Schema(
 def _validate_action(action: Any) -> None:
     """Validate the action payload.
 
-    Strings pass through as-is (re-issued as voice commands).
     Each dict/list item must have a 'service' string key.
     Raises ServiceValidationError on failure.
     """
     if action is None:
-        return
-
-    # Plain string actions are natural language sentences - no further validation.
-    if isinstance(action, str):
         return
 
     items: list[Any] = action if isinstance(action, list) else [action]
@@ -92,7 +87,7 @@ class CueEntry:
 
     name: str
     fire_at: datetime
-    action: str | dict | list | None = None
+    action: dict | list | None = None
     unsub: callback | None = None
 
 
@@ -126,7 +121,7 @@ class CueManager:
         self,
         name: str,
         fire_at: datetime,
-        action: str | dict | list | None = None,
+        action: dict | list | None = None,
     ) -> None:
         """Create or replace a cue."""
         # Ensure timezone-aware, stored in UTC
@@ -186,13 +181,15 @@ class CueManager:
 
         now = dt_util.utcnow()
         for name, cue_data in data["cues"].items():
-            # Support both old format (plain ISO string) and new format (dict)
             if isinstance(cue_data, str):
                 iso_dt = cue_data
-                action: str | dict | list | None = None
+                action: dict | list | None = None
             elif isinstance(cue_data, dict):
                 iso_dt = cue_data.get("datetime", "")
                 action = cue_data.get("action")
+                # Discard legacy string actions
+                if isinstance(action, str):
+                    action = None
             else:
                 _LOGGER.warning("Skipping cue '%s' with unrecognised storage format", name)
                 continue
@@ -213,9 +210,6 @@ class CueManager:
                 event_data[ATTR_ACTION] = action
                 self.hass.bus.async_fire(EVENT_CUE_TRIGGERED, event_data)
 
-                # Clean up any lingering entity registry entry for this
-                # cue so the "no longer being provided" warning does not
-                # appear on the next startup.
                 er = entity_registry.async_get(self.hass)
                 reg_entity_id = er.async_get_entity_id(
                     "sensor", DOMAIN, f"simple_cue_{name}"
@@ -263,9 +257,6 @@ class CueManager:
             async_dispatcher_send(self.hass, SIGNAL_CUE_REMOVED, name)
             async_dispatcher_send(self.hass, SIGNAL_CUES_UPDATED)
 
-            # Remove the entity registry entry so the
-            # "entity is no longer being provided" warning does not
-            # persist in the UI after the cue fires.
             er = entity_registry.async_get(self.hass)
             reg_entity_id = er.async_get_entity_id(
                 "sensor", DOMAIN, f"simple_cue_{name}"
@@ -354,18 +345,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_register(DOMAIN, SERVICE_SET, handle_set, SERVICE_SET_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_CANCEL, handle_cancel, SERVICE_CANCEL_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_CANCEL_ALL, handle_cancel_all)
-
-    # -- Register intents ----------------------------------------------------
-
-    from .intents import (  # noqa: E402
-        CancelSimpleCueIntent,
-        ListSimpleCuesIntent,
-        SetSimpleCueIntent,
-    )
-
-    intent.async_register(hass, SetSimpleCueIntent())
-    intent.async_register(hass, CancelSimpleCueIntent())
-    intent.async_register(hass, ListSimpleCuesIntent())
 
     # -- Forward platforms ---------------------------------------------------
 
