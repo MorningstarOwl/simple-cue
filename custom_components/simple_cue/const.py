@@ -15,3 +15,6 @@ ATTR_REMAINING = "remaining"
 ATTR_CUES = "cues"
 ATTR_ACTION = "action"
 ATTR_CUES_WITH_ACTIONS = "cues_with_actions"
+
+# Conversation agent config
+CONF_AGENT_ID = "agent_id"

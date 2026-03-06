@@ -3,11 +3,25 @@
     "step": {
       "user": {
         "title": "Simple Cue",
-        "description": "Add the Simple Cue integration. This provides named, one-shot scheduled triggers for automations."
+        "description": "Add the Simple Cue integration. Select the conversation agent that Simple Cue should forward non-scheduled commands to (e.g. your Ollama or Home Assistant agent).",
+        "data": {
+          "agent_id": "Underlying conversation agent"
+        }
       }
     },
     "abort": {
       "already_configured": "Simple Cue is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Simple Cue options",
+        "description": "Change the underlying conversation agent that Simple Cue forwards non-scheduled voice commands to.",
+        "data": {
+          "agent_id": "Underlying conversation agent"
+        }
+      }
     }
   }
 }
