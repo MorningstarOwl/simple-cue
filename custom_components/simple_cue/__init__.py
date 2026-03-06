@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import Context, HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.script import Script
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -54,30 +55,44 @@ SERVICE_CANCEL_SCHEMA = vol.Schema(
 )
 
 
-def _validate_action(action: Any) -> None:
-    """Validate the action payload.
+def _normalize_action(action: Any) -> list[dict] | None:
+    """Normalize an action payload to a list of HA-native action dicts.
 
-    Each dict/list item must have a 'service' string key.
-    Raises ServiceValidationError on failure.
+    - None → None
+    - List of dicts with 'action' key → pass through as-is
+    - Single dict with 'service' key → convert to single-item list with 'action' key
+    - List of dicts with 'service' keys → convert each to 'action' key
+    Raises ServiceValidationError on unrecognised input.
     """
     if action is None:
-        return
+        return None
 
     items: list[Any] = action if isinstance(action, list) else [action]
+    normalized: list[dict] = []
+
     for i, item in enumerate(items):
         if not isinstance(item, dict):
             raise ServiceValidationError(
                 f"action item {i} must be a mapping, got {type(item).__name__}"
             )
-        if "service" not in item:
+
+        if "action" in item:
+            # Already HA-native format
+            normalized.append(item)
+        elif "service" in item:
+            # Legacy format — convert 'service' key to 'action' key
+            converted: dict[str, Any] = {"action": item["service"]}
+            if "target" in item:
+                converted["target"] = item["target"]
+            if "data" in item:
+                converted["data"] = item["data"]
+            normalized.append(converted)
+        else:
             raise ServiceValidationError(
-                f"action item {i} is missing the required 'service' key"
+                f"action item {i} must have an 'action' or 'service' key"
             )
-        if not isinstance(item["service"], str):
-            raise ServiceValidationError(
-                f"action item {i} 'service' must be a string, "
-                f"got {type(item['service']).__name__}"
-            )
+
+    return normalized
 
 
 @dataclass
@@ -86,7 +101,7 @@ class CueEntry:
 
     name: str
     fire_at: datetime
-    action: dict | list | None = None
+    action: list[dict] | None = None
     unsub: callback | None = None
 
 
@@ -120,7 +135,7 @@ class CueManager:
         self,
         name: str,
         fire_at: datetime,
-        action: dict | list | None = None,
+        action: list[dict] | None = None,
     ) -> None:
         """Create or replace a cue."""
         # Ensure timezone-aware, stored in UTC
@@ -182,16 +197,25 @@ class CueManager:
         for name, cue_data in data["cues"].items():
             if isinstance(cue_data, str):
                 iso_dt = cue_data
-                action: dict | list | None = None
+                raw_action: Any = None
             elif isinstance(cue_data, dict):
                 iso_dt = cue_data.get("datetime", "")
-                action = cue_data.get("action")
+                raw_action = cue_data.get("action")
                 # Discard legacy string actions
-                if isinstance(action, str):
-                    action = None
+                if isinstance(raw_action, str):
+                    raw_action = None
             else:
                 _LOGGER.warning("Skipping cue '%s' with unrecognised storage format", name)
                 continue
+
+            # Normalize / migrate legacy service:-keyed payloads
+            try:
+                action = _normalize_action(raw_action)
+            except ServiceValidationError:
+                _LOGGER.warning(
+                    "Cue '%s' has invalid action payload, discarding action", name
+                )
+                action = None
 
             fire_at = dt_util.parse_datetime(iso_dt)
             if fire_at is None:
@@ -217,7 +241,7 @@ class CueManager:
             self._cues[name] = CueEntry(name=name, fire_at=fire_at, action=action, unsub=unsub)
             _LOGGER.debug("Restored cue '%s' for %s", name, fire_at.isoformat())
 
-        # Persist cleaned state (expired cues removed)
+        # Persist cleaned/migrated state
         await self._async_persist()
 
     async def async_shutdown(self) -> None:
@@ -248,6 +272,18 @@ class CueManager:
             await self._async_persist()
             async_dispatcher_send(self.hass, SIGNAL_CUE_REMOVED, name)
             async_dispatcher_send(self.hass, SIGNAL_CUES_UPDATED)
+
+            if entry.action:
+                try:
+                    script = Script(
+                        self.hass,
+                        entry.action,
+                        f"Simple Cue {name}",
+                        DOMAIN,
+                    )
+                    await script.async_run(context=Context())
+                except Exception:
+                    _LOGGER.exception("Error executing action for cue '%s'", name)
 
         return _fire_cue
 
@@ -292,10 +328,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_set(call: ServiceCall) -> None:
         name: str = call.data[ATTR_NAME]
         dt_raw = call.data[ATTR_DATETIME]
-        action: dict | list | None = call.data.get(ATTR_ACTION)
+        raw_action: dict | list | None = call.data.get(ATTR_ACTION)
 
-        # Validate action payload before parsing datetime
-        _validate_action(action)
+        # Normalize and validate action payload
+        action = _normalize_action(raw_action)
 
         if isinstance(dt_raw, str):
             # Try ISO-8601 first, then fall back to natural language

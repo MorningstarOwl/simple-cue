@@ -22,21 +22,19 @@ set:
     action:
       name: Action
       description: >
-        Optional structured action payload to execute when the cue fires.
+        Optional action(s) to execute when the cue fires. Uses HA's native
+        action format — the same actions you use in automations.
 
-        Dict: a single HA service call with a required 'service' key and
-        optional 'target' and 'data' keys.
-
-        List: a sequence of service call dicts executed in order.
+        List: one or more HA actions executed in order when the cue fires.
 
         Omit entirely for event-only cues handled by dedicated automations.
       required: false
       example: >
-        service: light.turn_off
-        target:
-          entity_id: light.living_room
+        - action: light.turn_off
+          target:
+            entity_id: light.living_room
       selector:
-        text:
+        action:
 
 cancel:
   name: Cancel cue

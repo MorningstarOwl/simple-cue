@@ -2,7 +2,7 @@
 
 DOMAIN = "simple_cue"
 STORAGE_KEY = "simple_cue"
-STORAGE_VERSION = 1
+STORAGE_VERSION = 2
 EVENT_CUE_TRIGGERED = "simple_cue_triggered"
 
 SIGNAL_CUE_ADDED = f"{DOMAIN}_cue_added"

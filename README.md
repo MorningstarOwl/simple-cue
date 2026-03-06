@@ -1,6 +1,6 @@
 # Simple Cue
 
-Named, one-shot scheduled triggers for Home Assistant. Set a cue by name and datetime — when the time comes, an event fires and your automations take it from there. No helper entities, no template hacks.
+Named, one-shot scheduled triggers for Home Assistant. Set a cue by name and datetime — when the time comes, Simple Cue executes the stored action and fires a `simple_cue_triggered` event. No helper entities, no template hacks.
 
 ---
 
@@ -15,7 +15,12 @@ Named, one-shot scheduled triggers for Home Assistant. Set a cue by name and dat
 
 ## How It Works
 
-Call `simple_cue.set` from any automation or script with a name and a datetime. Simple Cue stores the cue, waits, then fires a `simple_cue_triggered` event. Your automations listen for that event and act.
+Call `simple_cue.set` from any automation or script with a name, a datetime, and an optional list of actions. Simple Cue stores the cue, waits, then:
+
+1. Fires a `simple_cue_triggered` event (for any external listeners)
+2. Executes the stored action list directly via HA's script engine
+
+No external Action Dispatcher automation is needed.
 
 ---
 
@@ -27,7 +32,7 @@ Call `simple_cue.set` from any automation or script with a name and a datetime. 
 |------------|------------|----------|------------------------------------|
 | `name`     | string     | Yes      | Unique slug (e.g. `coffee`)        |
 | `datetime` | string     | Yes      | When the cue should fire           |
-| `action`   | dict/list  | No       | Structured service call(s) to run  |
+| `action`   | list       | No       | HA-native action(s) to execute     |
 
 Setting a cue with an existing name replaces it.
 
@@ -67,32 +72,34 @@ Accepts **natural language** or an **ISO-8601 string**.
 
 #### The `action` field
 
-**Structured dict** (single service call):
+Uses HA's native action format — the same syntax as automation actions. In the UI you get the full visual action builder.
+
+**Single action:**
 ```yaml
 action: simple_cue.set
 data:
   name: living_room_lights_off
   datetime: "today at 6:45pm"
   action:
-    service: light.turn_off
-    target:
-      entity_id: light.living_room
+    - action: light.turn_off
+      target:
+        entity_id: light.living_room
 ```
 
-**Structured list** (sequence of service calls):
+**Multiple actions (sequence):**
 ```yaml
 action: simple_cue.set
 data:
   name: bedtime_routine
   datetime: "today at 11pm"
   action:
-    - service: light.turn_off
+    - action: light.turn_off
       target:
         entity_id: light.all_lights
-    - service: lock.lock
+    - action: lock.lock
       target:
         entity_id: lock.front_door
-    - service: climate.set_temperature
+    - action: climate.set_temperature
       target:
         entity_id: climate.thermostat
       data:
@@ -121,7 +128,7 @@ Removes every active cue.
 
 ## Events
 
-When a cue fires, `simple_cue_triggered` is emitted.
+When a cue fires, `simple_cue_triggered` is emitted before the action executes.
 
 ```yaml
 event_type: simple_cue_triggered
@@ -129,10 +136,9 @@ event_data:
   name: living_room_lights_off
   datetime: "2025-06-01T21:00:00+00:00"
   action:
-    service: light.turn_off
-    target:
-      entity_id: light.living_room
-    data: {}
+    - action: light.turn_off
+      target:
+        entity_id: light.living_room
 ```
 
 The `action` key is always present. It is `null` when no action was provided.
@@ -145,11 +151,11 @@ The `action` key is always present. It is `null` when no action was provided.
 
 One entity per active cue, removed automatically when the cue fires or is cancelled.
 
-| Attribute   | Type              | Description                                 |
-|-------------|-------------------|---------------------------------------------|
-| `name`      | string            | Cue slug                                    |
-| `remaining` | string            | Human-readable countdown (e.g. `"2h 14m"`) |
-| `action`    | dict / list / null | Stored action payload, or `null`           |
+| Attribute   | Type        | Description                                 |
+|-------------|-------------|---------------------------------------------|
+| `name`      | string      | Cue slug                                    |
+| `remaining` | string      | Human-readable countdown (e.g. `"2h 14m"`) |
+| `action`    | list / null | Stored action payload, or `null`            |
 
 State is the fire datetime in local time (ISO-8601).
 
@@ -167,7 +173,30 @@ Always present. Shows the total number of active cues.
 ## Example: Coffee Machine
 
 ```yaml
-# Automation 1 — schedule the cue
+# Automation 1 — schedule the cue (with inline action)
+alias: "Coffee — Schedule Cue"
+triggers:
+  - trigger: state
+    entity_id: input_boolean.coffee_tomorrow
+    to: "on"
+actions:
+  - action: simple_cue.set
+    data:
+      name: coffee
+      datetime: "tomorrow at 6:30am"
+      action:
+        - action: switch.turn_on
+          target:
+            entity_id: switch.coffee_machine
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.coffee_tomorrow
+```
+
+Or use the event-only pattern and react separately:
+
+```yaml
+# Automation 1 — schedule the cue (no action)
 alias: "Coffee — Schedule Cue"
 triggers:
   - trigger: state
@@ -181,9 +210,7 @@ actions:
   - action: input_boolean.turn_off
     target:
       entity_id: input_boolean.coffee_tomorrow
-```
 
-```yaml
 # Automation 2 — react when the cue fires
 alias: "Coffee — Brew"
 triggers:
@@ -199,14 +226,15 @@ actions:
 
 ---
 
-## Action Dispatcher Automation
+## Action Dispatcher Automation (Legacy)
 
-Install this automation once if you use the `action` field in `simple_cue.set`. It listens for `simple_cue_triggered` events and executes the stored action payload automatically.
+> **Note:** As of v2.0.0, Simple Cue executes action payloads internally. The Action Dispatcher automation below is no longer required for new installations. It is preserved here for reference and backward compatibility.
 
 ```yaml
 alias: "Simple Cue — Action Dispatcher"
 description: >
-  Executes structured action payloads when a cue fires.
+  Legacy: executes structured action payloads when a cue fires.
+  Not needed for v2.0.0+ installations.
 triggers:
   - trigger: event
     event_type: simple_cue_triggered
@@ -215,15 +243,13 @@ conditions:
     value_template: "{{ trigger.event.data.action is not none }}"
 actions:
   - choose:
-      # Dict: single structured service call
       - conditions:
           - condition: template
             value_template: "{{ trigger.event.data.action is mapping }}"
         sequence:
-          - action: "{{ trigger.event.data.action.service }}"
+          - action: "{{ trigger.event.data.action.action }}"
             target: "{{ trigger.event.data.action.get('target', {}) }}"
             data: "{{ trigger.event.data.action.get('data', {}) }}"
-      # List: sequence of structured service calls
       - conditions:
           - condition: template
             value_template: "{{ trigger.event.data.action is sequence }}"
@@ -231,7 +257,7 @@ actions:
           - repeat:
               for_each: "{{ trigger.event.data.action }}"
               sequence:
-                - action: "{{ repeat.item.service }}"
+                - action: "{{ repeat.item.action }}"
                   target: "{{ repeat.item.get('target', {}) }}"
                   data: "{{ repeat.item.get('data', {}) }}"
 mode: queued
@@ -242,14 +268,20 @@ max: 20
 
 ## Troubleshooting
 
-**Cue fires but nothing happens**
-- Check that the Action Dispatcher automation is installed and enabled
-- Open **Developer Tools → Events**, listen for `simple_cue_triggered`, and check the `action` field in the payload
-- If the action is a dict, verify the `service` and `entity_id` are correct
+**Cue fires but action doesn't execute**
+- Check **Settings → System → Logs** for errors from `simple_cue`
+- Open **Developer Tools → Events**, listen for `simple_cue_triggered`, and verify the `action` field looks correct
+- Confirm the `entity_id` and action name (e.g. `light.turn_off`) are valid
 
 **"Could not parse datetime" in logs**
 - The natural language parser is strict — see the accepted expressions table above
 - Use ISO-8601 for exact datetimes: `2025-06-01T21:00:00`
+
+---
+
+## Migrating from v1.x
+
+Action payloads stored with the old `service:` key format are automatically converted to the new `action:` key format on first load. No manual changes are needed.
 
 ---
 
