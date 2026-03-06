@@ -9,7 +9,7 @@ Named, one-shot scheduled triggers for Home Assistant. Set a cue by name and dat
 1. Add this repo as a **custom repository** in HACS (type: Integration)
 2. Search for **Simple Cue** and install
 3. Restart Home Assistant
-4. Go to **Settings → Devices & Services → Add Integration → Simple Cue**
+4. Go to **Settings → Devices & Services → Add Integration → Simple Cue** and click **Submit** — no configuration is required
 
 ---
 
@@ -226,9 +226,7 @@ actions:
       # List: sequence of structured service calls
       - conditions:
           - condition: template
-            value_template: >-
-              {{ trigger.event.data.action is sequence
-                 and trigger.event.data.action is not string }}
+            value_template: "{{ trigger.event.data.action is sequence }}"
         sequence:
           - repeat:
               for_each: "{{ trigger.event.data.action }}"
