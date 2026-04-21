@@ -9,7 +9,8 @@ Named, one-shot scheduled triggers for Home Assistant. Set a cue by name and dat
 1. Add this repo as a **custom repository** in HACS (type: Integration)
 2. Search for **Simple Cue** and install
 3. Restart Home Assistant
-4. Go to **Settings → Devices & Services → Add Integration → Simple Cue** and click **Submit** — no configuration is required
+4. Go to **Settings → Devices & Services → Add Integration → Simple Cue**
+5. Set the MCP server port (default: `8777`) and click **Submit**
 
 ---
 
@@ -19,8 +20,6 @@ Call `simple_cue.set` from any automation or script with a name, a datetime, and
 
 1. Fires a `simple_cue_triggered` event (for any external listeners)
 2. Executes the stored action list directly via HA's script engine
-
-No external Action Dispatcher automation is needed.
 
 ---
 
@@ -170,6 +169,52 @@ Always present. Shows the total number of active cues.
 
 ---
 
+## MCP Voice Interface
+
+Simple Cue includes a built-in MCP SSE server. Any Home Assistant AI assistant — including Ollama-backed voice pipelines — can set, cancel, and query timers by voice with no additional addons.
+
+### Setup
+
+**1. Add the MCP integration**
+
+Go to **Settings → Devices & Services → Add Integration → Model Context Protocol** and set the SSE URL:
+
+```
+http://homeassistant.local:8777/sse
+```
+
+(Replace `8777` with your custom port if you changed it during Simple Cue setup.)
+
+**2. Optional — announce when timers fire**
+
+Add a TTS automation so your voice assistant speaks when a timer completes:
+
+```yaml
+alias: "Simple Cue — Announce Timer"
+triggers:
+  - trigger: event
+    event_type: simple_cue_triggered
+actions:
+  - action: tts.speak
+    target:
+      entity_id: tts.piper
+    data:
+      media_player_entity_id: media_player.your_player
+      message: "Timer done. {{ trigger.event.data.name }} is complete."
+```
+
+### Voice Tools
+
+| Tool | Example phrase | What it does |
+|---|---|---|
+| `set_timer(name, when)` | *"Set a pasta timer for 12 minutes"* | Schedules a named cue |
+| `cancel_timer(name)` | *"Cancel the pasta timer"* | Cancels a named cue |
+| `list_timers()` | *"What timers do I have?"* | Lists all active timers with remaining time |
+
+The `when` field accepts the same natural language and ISO-8601 strings as `simple_cue.set`.
+
+---
+
 ## Example: Coffee Machine
 
 ```yaml
@@ -226,46 +271,6 @@ actions:
 
 ---
 
-## Action Dispatcher Automation (Legacy)
-
-> **Note:** As of v2.0.0, Simple Cue executes action payloads internally. The Action Dispatcher automation below is no longer required for new installations. It is preserved here for reference and backward compatibility.
-
-```yaml
-alias: "Simple Cue — Action Dispatcher"
-description: >
-  Legacy: executes structured action payloads when a cue fires.
-  Not needed for v2.0.0+ installations.
-triggers:
-  - trigger: event
-    event_type: simple_cue_triggered
-conditions:
-  - condition: template
-    value_template: "{{ trigger.event.data.action is not none }}"
-actions:
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ trigger.event.data.action is mapping }}"
-        sequence:
-          - action: "{{ trigger.event.data.action.action }}"
-            target: "{{ trigger.event.data.action.get('target', {}) }}"
-            data: "{{ trigger.event.data.action.get('data', {}) }}"
-      - conditions:
-          - condition: template
-            value_template: "{{ trigger.event.data.action is sequence }}"
-        sequence:
-          - repeat:
-              for_each: "{{ trigger.event.data.action }}"
-              sequence:
-                - action: "{{ repeat.item.action }}"
-                  target: "{{ repeat.item.get('target', {}) }}"
-                  data: "{{ repeat.item.get('data', {}) }}"
-mode: queued
-max: 20
-```
-
----
-
 ## Troubleshooting
 
 **Cue fires but action doesn't execute**
@@ -276,6 +281,11 @@ max: 20
 **"Could not parse datetime" in logs**
 - The natural language parser is strict — see the accepted expressions table above
 - Use ISO-8601 for exact datetimes: `2025-06-01T21:00:00`
+
+**MCP client can't connect**
+- Confirm Simple Cue is loaded and HA has been restarted since install (HA installs `mcp[cli]` on first restart)
+- Check the port in the SSE URL matches the port set during Simple Cue setup
+- Check **Settings → System → Logs** for `Simple Cue MCP server` entries
 
 ---
 
