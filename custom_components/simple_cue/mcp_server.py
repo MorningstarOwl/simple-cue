@@ -16,7 +16,6 @@ SSE endpoint:  http://<ha-host>:<port>/sse
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import threading
 from typing import TYPE_CHECKING
@@ -122,37 +121,33 @@ def build_mcp_server(
     # ------------------------------------------------------------------
 
     @mcp.tool()
-    def set_timer(name: str, when: str, action: str | None = None) -> str:
+    def set_timer(name: str, when: str, action: dict | list | None = None) -> str:
         """Schedule a named timer with an optional Home Assistant action.
 
         'when' accepts natural language such as 'in 20 minutes',
         'tomorrow at 7am', or 'next friday at 9pm', as well as
         ISO-8601 strings like '2025-06-01T08:00:00'.
 
-        'action' is an optional JSON string specifying what Home Assistant
+        'action' is an optional action object specifying what Home Assistant
         should do automatically when the timer fires. Use find_entity() first
         to resolve the correct entity_id.
 
         Single action:
-            action='{"action":"light.turn_on","target":{"entity_id":"light.graces_room"}}'
+            action={"action": "light.turn_on", "target": {"entity_id": "light.graces_room"}}
 
         Multiple actions:
-            action='[{"action":"light.turn_off","target":{"entity_id":"light.all_lights"}},
-                     {"action":"lock.lock","target":{"entity_id":"lock.front_door"}}]'
+            action=[{"action": "light.turn_off", "target": {"entity_id": "light.all_lights"}},
+                    {"action": "lock.lock", "target": {"entity_id": "lock.front_door"}}]
 
         Action with extra data (e.g. brightness, temperature):
-            action='{"action":"light.turn_on","target":{"entity_id":"light.graces_room"},"data":{"brightness_pct":50}}'
+            action={"action": "light.turn_on", "target": {"entity_id": "light.graces_room"}, "data": {"brightness_pct": 50}}
 
         If action is omitted the timer fires a simple_cue_triggered event only.
         If a timer with the same name already exists it is replaced.
         """
         action_payload: list[dict] | None = None
-        if action:
-            try:
-                parsed = json.loads(action)
-                action_payload = parsed if isinstance(parsed, list) else [parsed]
-            except json.JSONDecodeError as err:
-                return f"Invalid action JSON: {err}. Check the format and try again."
+        if action is not None:
+            action_payload = action if isinstance(action, list) else [action]
 
         service_data: dict = {ATTR_NAME: name, ATTR_DATETIME: when}
         if action_payload is not None:

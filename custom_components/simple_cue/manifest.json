@@ -8,5 +8,5 @@
   "integration_type": "service",
   "iot_class": "local_push",
   "requirements": ["mcp[cli]>=1.0"],
-  "version": "2.2.3"
+  "version": "2.2.4"
 }
