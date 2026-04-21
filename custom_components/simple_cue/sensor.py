@@ -9,6 +9,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
@@ -62,8 +63,15 @@ async def async_setup_entry(
     manager = hass.data[DOMAIN]["manager"]
     entities: dict[str, SimpleCueSensor] = {}
 
+    device_info = DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="Simple Cue",
+        manufacturer="MorningstarOwl",
+        entry_type=DeviceEntryType.SERVICE,
+    )
+
     # -- Count sensor (always present) --------------------------------------
-    count_sensor = SimpleCueCountSensor(manager)
+    count_sensor = SimpleCueCountSensor(manager, device_info)
 
     # -- Periodic refresh for remaining countdowns --------------------------
     @callback
@@ -86,7 +94,7 @@ async def async_setup_entry(
             old = entities.pop(name)
             hass.async_create_task(old.async_remove())
 
-        sensor = SimpleCueSensor(name, fire_at, action)
+        sensor = SimpleCueSensor(name, fire_at, action, device_info)
         entities[name] = sensor
         async_add_entities([sensor])
 
@@ -112,7 +120,7 @@ async def async_setup_entry(
     # -- Bootstrap existing cues from manager --------------------------------
     initial_sensors: list[SimpleCueSensor] = []
     for name, cue_entry in manager.cues.items():
-        sensor = SimpleCueSensor(name, cue_entry.fire_at, cue_entry.action)
+        sensor = SimpleCueSensor(name, cue_entry.fire_at, cue_entry.action, device_info)
         entities[name] = sensor
         initial_sensors.append(sensor)
 
@@ -126,7 +134,11 @@ class SimpleCueSensor(SensorEntity):
     _attr_icon = "mdi:timer-outline"
 
     def __init__(
-        self, name: str, fire_at: datetime, action: dict | list | None = None
+        self,
+        name: str,
+        fire_at: datetime,
+        action: dict | list | None = None,
+        device_info: DeviceInfo | None = None,
     ) -> None:
         """Initialise the cue sensor."""
         self._cue_name = name
@@ -135,6 +147,7 @@ class SimpleCueSensor(SensorEntity):
 
         self._attr_unique_id = f"simple_cue_{name}"
         self._attr_name = f"Simple Cue {name}"
+        self._attr_device_info = device_info
 
     @property
     def native_value(self) -> str:
@@ -161,9 +174,10 @@ class SimpleCueCountSensor(SensorEntity):
     _attr_name = "Simple Cue Count"
     _attr_icon = "mdi:counter"
 
-    def __init__(self, manager) -> None:
+    def __init__(self, manager, device_info: DeviceInfo | None = None) -> None:
         """Initialise the count sensor."""
         self._manager = manager
+        self._attr_device_info = device_info
 
     @property
     def native_value(self) -> int:
