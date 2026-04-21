@@ -207,11 +207,40 @@ actions:
 
 | Tool | Example phrase | What it does |
 |---|---|---|
-| `set_timer(name, when)` | *"Set a pasta timer for 12 minutes"* | Schedules a named cue |
+| `find_entity(search)` | *(called automatically by the LLM)* | Searches HA entities by friendly name or entity ID |
+| `set_timer(name, when, action?)` | *"Turn on Grace's lamp in 2 minutes"* | Schedules a named cue, optionally with a HA action |
 | `cancel_timer(name)` | *"Cancel the pasta timer"* | Cancels a named cue |
 | `list_timers()` | *"What timers do I have?"* | Lists all active timers with remaining time |
 
 The `when` field accepts the same natural language and ISO-8601 strings as `simple_cue.set`.
+
+#### How device control works
+
+When you ask the assistant to perform a HA action at a future time, the LLM automatically:
+
+1. Calls `find_entity` to resolve the device name to an entity ID
+2. Calls `set_timer` with the resolved entity ID and the appropriate HA service packed into the `action` field
+3. When the timer fires, Simple Cue executes the stored action directly — no extra automations required
+
+**Examples of what you can say:**
+- *"Turn on Grace's lamp in 2 minutes"* → turns on the lamp
+- *"Turn off the coffee machine in 30 minutes"* → turns off the switch
+- *"Lock the front door at 10pm"* → calls lock.lock
+- *"Turn off all the lights and lock the front door in 20 minutes"* → multi-step action
+
+The `action` field mirrors HA's native action format. For advanced cases you can pass it directly:
+
+```
+Single action:
+  action='{"action":"light.turn_on","target":{"entity_id":"light.graces_room"}}'
+
+Multiple actions:
+  action='[{"action":"light.turn_off","target":{"entity_id":"light.all_lights"}},
+           {"action":"lock.lock","target":{"entity_id":"lock.front_door"}}]'
+
+With extra data (e.g. brightness):
+  action='{"action":"light.turn_on","target":{"entity_id":"light.graces_room"},"data":{"brightness_pct":50}}'
+```
 
 ---
 
@@ -286,6 +315,11 @@ actions:
 - Confirm Simple Cue is loaded and HA has been restarted since install (HA installs `mcp[cli]` on first restart)
 - Check the port in the SSE URL matches the port set during Simple Cue setup
 - Check **Settings → System → Logs** for `Simple Cue MCP server` entries
+
+**Timer fires but the device action doesn't happen**
+- Open **Developer Tools → Events**, listen for `simple_cue_triggered`, and confirm the `action` field in the event data is populated (not `null`)
+- If `action` is `null`, the LLM set the timer without an action — ask it again and confirm it found the entity via `find_entity` first
+- Check **Settings → System → Logs** for errors from `simple_cue` around the time the timer fired
 
 ---
 
