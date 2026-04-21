@@ -89,7 +89,7 @@ async def async_setup_entry(
     def _handle_cue_added(
         name: str, fire_at: datetime, action: dict | list | None
     ) -> None:
-        # If replacing, remove old entity first
+        _LOGGER.info("simple_cue: _handle_cue_added fired for '%s'", name)
         if name in entities:
             old = entities.pop(name)
             hass.async_create_task(old.async_remove())
@@ -97,6 +97,7 @@ async def async_setup_entry(
         sensor = SimpleCueSensor(name, fire_at, action, device_info)
         entities[name] = sensor
         async_add_entities([sensor])
+        _LOGGER.info("simple_cue: async_add_entities called for '%s', unique_id=%s", name, sensor.unique_id)
 
     # -- Dispatcher: cue removed --------------------------------------------
     @callback
