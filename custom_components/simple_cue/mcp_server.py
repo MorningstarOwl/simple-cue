@@ -122,27 +122,31 @@ def build_mcp_server(
 
     @mcp.tool()
     def set_timer(name: str, when: str, action: dict | list[dict] | None = None) -> str:
-        """Schedule a named timer with an optional Home Assistant action.
+        """Schedule a named timer that fires a Home Assistant action at a given time.
+
+        IMPORTANT: Whenever the user wants a device controlled at a future time
+        (turn on, turn off, lock, unlock, dim, etc.) you MUST provide the action
+        parameter. Always call find_entity() first to resolve the correct entity_id,
+        then pass it in the action. Never schedule a timer for a device control
+        request without an action.
 
         'when' accepts natural language such as 'in 20 minutes',
         'tomorrow at 7am', or 'next friday at 9pm', as well as
         ISO-8601 strings like '2025-06-01T08:00:00'.
 
-        'action' is an optional action object specifying what Home Assistant
-        should do automatically when the timer fires. Use find_entity() first
-        to resolve the correct entity_id.
+        Turn a light ON at a future time:
+            action={"action": "light.turn_on", "target": {"entity_id": "light.bedroom_lights"}}
 
-        Single action:
-            action={"action": "light.turn_on", "target": {"entity_id": "light.graces_room"}}
+        Turn a light OFF at a future time:
+            action={"action": "light.turn_off", "target": {"entity_id": "light.bedroom_lights"}}
 
-        Multiple actions:
+        Turn on with brightness:
+            action={"action": "light.turn_on", "target": {"entity_id": "light.bedroom_lights"}, "data": {"brightness_pct": 50}}
+
+        Multiple actions (e.g. turn off lights AND lock door):
             action=[{"action": "light.turn_off", "target": {"entity_id": "light.all_lights"}},
                     {"action": "lock.lock", "target": {"entity_id": "lock.front_door"}}]
 
-        Action with extra data (e.g. brightness, temperature):
-            action={"action": "light.turn_on", "target": {"entity_id": "light.graces_room"}, "data": {"brightness_pct": 50}}
-
-        If action is omitted the timer fires a simple_cue_triggered event only.
         If a timer with the same name already exists it is replaced.
         """
         action_payload: list[dict] | None = None
