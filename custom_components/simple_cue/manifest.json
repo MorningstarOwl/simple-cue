@@ -7,5 +7,6 @@
   "documentation": "https://github.com/MorningstarOwl/simple-cue",
   "integration_type": "service",
   "iot_class": "local_push",
-  "version": "2.0.0"
+  "requirements": ["mcp[cli]>=1.0"],
+  "version": "2.1.0"
 }

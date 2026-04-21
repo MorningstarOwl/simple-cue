@@ -23,8 +23,13 @@ from .const import (
     ATTR_ACTION,
     ATTR_DATETIME,
     ATTR_NAME,
+    CONF_MCP_PORT,
+    DEFAULT_MCP_PORT,
     DOMAIN,
     EVENT_CUE_TRIGGERED,
+    SERVICE_CANCEL,
+    SERVICE_CANCEL_ALL,
+    SERVICE_SET,
     SIGNAL_CUE_ADDED,
     SIGNAL_CUE_REMOVED,
     SIGNAL_CUES_UPDATED,
@@ -35,10 +40,6 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
-
-SERVICE_SET = "set"
-SERVICE_CANCEL = "cancel"
-SERVICE_CANCEL_ALL = "cancel_all"
 
 SERVICE_SET_SCHEMA = vol.Schema(
     {
@@ -367,6 +368,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_register(DOMAIN, SERVICE_CANCEL, handle_cancel, SERVICE_CANCEL_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_CANCEL_ALL, handle_cancel_all)
 
+    # -- Start MCP server ----------------------------------------------------
+
+    port: int = entry.data.get(CONF_MCP_PORT, DEFAULT_MCP_PORT)
+    from .mcp_server import build_mcp_server
+    _mcp, _thread = build_mcp_server(hass, manager, port)
+    _thread.start()
+    hass.data[DOMAIN]["mcp_thread"] = _thread
+
     # -- Forward platforms ---------------------------------------------------
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -385,5 +394,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_remove(DOMAIN, SERVICE_SET)
         hass.services.async_remove(DOMAIN, SERVICE_CANCEL)
         hass.services.async_remove(DOMAIN, SERVICE_CANCEL_ALL)
+
+    # MCP thread is a daemon — it will exit when HA exits.
+    # On a config entry reload the old thread dies and a new one starts
+    # after async_setup_entry runs again.  The OS will reclaim the port
+    # within a few seconds (SO_REUSEADDR is set by uvicorn by default).
 
     return unload_ok

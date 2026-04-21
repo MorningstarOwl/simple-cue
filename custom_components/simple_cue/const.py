@@ -15,3 +15,12 @@ ATTR_REMAINING = "remaining"
 ATTR_CUES = "cues"
 ATTR_ACTION = "action"
 ATTR_CUES_WITH_ACTIONS = "cues_with_actions"
+
+# Services (also referenced by mcp_server.py)
+SERVICE_SET = "set"
+SERVICE_CANCEL = "cancel"
+SERVICE_CANCEL_ALL = "cancel_all"
+
+# MCP server
+CONF_MCP_PORT = "mcp_port"
+DEFAULT_MCP_PORT = 8766
