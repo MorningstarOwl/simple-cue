@@ -160,7 +160,7 @@ class CueManager:
         await self._async_persist()
         async_dispatcher_send(self.hass, SIGNAL_CUE_ADDED, name, fire_at, action)
         async_dispatcher_send(self.hass, SIGNAL_CUES_UPDATED)
-        _LOGGER.warning("simple_cue: cue '%s' stored, fire_at=%s, action=%s", name, fire_at.isoformat(), action)
+        _LOGGER.info("Cue '%s' set for %s", name, fire_at.isoformat())
 
     async def async_cancel_cue(self, name: str) -> None:
         """Cancel a cue by name. No-op if it doesn't exist."""
@@ -261,7 +261,7 @@ class CueManager:
             if entry is None:
                 return
 
-            _LOGGER.warning("simple_cue: cue '%s' fired, action payload: %s", name, entry.action)
+            _LOGGER.info("Cue '%s' fired", name)
             event_data: dict[str, Any] = {
                 ATTR_NAME: name,
                 ATTR_DATETIME: entry.fire_at.isoformat(),
@@ -275,7 +275,6 @@ class CueManager:
             async_dispatcher_send(self.hass, SIGNAL_CUES_UPDATED)
 
             if entry.action:
-                _LOGGER.warning("simple_cue: executing script for '%s': %s", name, entry.action)
                 try:
                     script = Script(
                         self.hass,
@@ -284,11 +283,8 @@ class CueManager:
                         DOMAIN,
                     )
                     await script.async_run(context=Context())
-                    _LOGGER.warning("simple_cue: script completed for '%s'", name)
                 except Exception:
-                    _LOGGER.exception("simple_cue: script FAILED for cue '%s'", name)
-            else:
-                _LOGGER.warning("simple_cue: no action stored for '%s' — only event fired", name)
+                    _LOGGER.exception("Error executing action for cue '%s'", name)
 
         return _fire_cue
 

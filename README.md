@@ -148,7 +148,7 @@ The `action` key is always present. It is `null` when no action was provided.
 
 ### `sensor.simple_cue_{name}`
 
-One entity per active cue, removed automatically when the cue fires or is cancelled.
+One entity per active cue, visible under **Settings → Devices & Services → Simple Cue → Entities** while the timer is running. Removed automatically when the cue fires or is cancelled.
 
 | Attribute   | Type        | Description                                 |
 |-------------|-------------|---------------------------------------------|
@@ -219,7 +219,7 @@ The `when` field accepts the same natural language and ISO-8601 strings as `simp
 When you ask the assistant to perform a HA action at a future time, the LLM automatically:
 
 1. Calls `find_entity` to resolve the device name to an entity ID
-2. Calls `set_timer` with the resolved entity ID and the appropriate HA service packed into the `action` field
+2. Calls `set_timer` with the resolved entity ID and the appropriate HA action packed into the `action` field
 3. When the timer fires, Simple Cue executes the stored action directly — no extra automations required
 
 **Examples of what you can say:**
@@ -227,20 +227,10 @@ When you ask the assistant to perform a HA action at a future time, the LLM auto
 - *"Turn off the coffee machine in 30 minutes"* → turns off the switch
 - *"Lock the front door at 10pm"* → calls lock.lock
 - *"Turn off all the lights and lock the front door in 20 minutes"* → multi-step action
+- *"Dim the living room lights to 30% at 9pm"* → calls light.turn_on with brightness data
 
-The `action` field mirrors HA's native action format. For advanced cases you can pass it directly:
-
-```
-Single action:
-  action='{"action":"light.turn_on","target":{"entity_id":"light.graces_room"}}'
-
-Multiple actions:
-  action='[{"action":"light.turn_off","target":{"entity_id":"light.all_lights"}},
-           {"action":"lock.lock","target":{"entity_id":"lock.front_door"}}]'
-
-With extra data (e.g. brightness):
-  action='{"action":"light.turn_on","target":{"entity_id":"light.graces_room"},"data":{"brightness_pct":50}}'
-```
+> [!IMPORTANT]
+> Always phrase requests so the device action is clear. The LLM must be able to resolve both the device and the intended action (on, off, lock, dim, etc.) to schedule correctly. If a timer fires but the device doesn't respond, check **Settings → System → Logs** for `simple_cue` errors and confirm the timer was set with a populated action — see [Troubleshooting](#troubleshooting).
 
 ---
 
