@@ -23,4 +23,4 @@ SERVICE_CANCEL_ALL = "cancel_all"
 
 # MCP server
 CONF_MCP_PORT = "mcp_port"
-DEFAULT_MCP_PORT = 8766
+DEFAULT_MCP_PORT = 8777

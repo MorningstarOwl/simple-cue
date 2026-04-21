@@ -8,7 +8,7 @@
           "mcp_port": "MCP server port"
         },
         "data_description": {
-          "mcp_port": "Port for the built-in MCP SSE server (default: 8766). After setup, point Home Assistant's MCP integration at http://homeassistant.local:{port}/sse."
+          "mcp_port": "Port for the built-in MCP SSE server (default: 8777). After setup, point Home Assistant's MCP integration at http://homeassistant.local:{port}/sse."
         }
       }
     },
