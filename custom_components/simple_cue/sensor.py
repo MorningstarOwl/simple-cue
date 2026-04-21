@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import entity_registry
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -106,12 +105,6 @@ async def async_setup_entry(
         if entity is not None:
             async def _full_removal() -> None:
                 await entity.async_remove()
-                er = entity_registry.async_get(hass)
-                reg_id = er.async_get_entity_id(
-                    "sensor", DOMAIN, f"simple_cue_{name}"
-                )
-                if reg_id:
-                    er.async_remove(reg_id)
             hass.async_create_task(_full_removal())
 
     async_dispatcher_connect(hass, SIGNAL_CUE_ADDED, _handle_cue_added)
