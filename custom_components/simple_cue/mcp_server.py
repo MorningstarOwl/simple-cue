@@ -121,7 +121,7 @@ def build_mcp_server(
     # ------------------------------------------------------------------
 
     @mcp.tool()
-    def set_timer(name: str, when: str, action: dict | list | None = None) -> str:
+    def set_timer(name: str, when: str, action: dict | list[dict] | None = None) -> str:
         """Schedule a named timer with an optional Home Assistant action.
 
         'when' accepts natural language such as 'in 20 minutes',
